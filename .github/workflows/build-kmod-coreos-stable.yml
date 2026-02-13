@@ -121,7 +121,7 @@ jobs:
             akmods --force --kernels "${KVER}"
 
             # Collect resulting RPM(s)
-            find /var/cache/akmods -maxdepth 5 -name "*.rpm" -print -exec cp -v {} /src/dist/ \;
+            find /var/cache/akmods -maxdepth 5 -name "*intel-ipu6*.rpm" -print -exec cp -v {} /src/dist/ \;
 
             # Also ship the public key so machines can enroll it (MOK) if needed
             cp -v /etc/pki/akmods/certs/public_key.der /src/dist/
