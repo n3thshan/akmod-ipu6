@@ -84,7 +84,10 @@ jobs:
             curl -fLO "$BASE/kernel-core-${KVER}.rpm"
             curl -fLO "$BASE/kernel-modules-core-${KVER}.rpm"
             curl -fLO "$BASE/kernel-devel-${KVER}.rpm"
-            dnf -y install ./kernel-core-"${KVER}".rpm ./kernel-devel-"${KVER}".rpm
+            dnf -y install \
+              ./kernel-core-"${KVER}".rpm \
+              ./kernel-modules-core-"${KVER}".rpm \
+              ./kernel-devel-"${KVER}".rpm
 
             # Put signing keys where akmods expects them (so .ko files get signed)
             install -d /etc/pki/akmods/private /etc/pki/akmods/certs
