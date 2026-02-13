@@ -1,4 +1,4 @@
-name: build-kmod-coreos-43.20260105.3.0-intel-ipu6
+name: one-timer
 
 on:
   workflow_dispatch:
