@@ -66,8 +66,8 @@ jobs:
           fi
 
       - name: Build kmod RPM in Fedora container + sign modules
+        if: steps.check.outputs.skip != 'true'
         env:
-          if: steps.check.outputs.skip != 'true'
           FEDORA_KERNEL: ${{ steps.kver.outputs.fedora_kernel }}
           KMOD_PRIVKEY_B64: ${{ secrets.KMOD_PRIVKEY_B64 }}
           KMOD_PUBDER_B64: ${{ secrets.KMOD_PUBDER_B64 }}
