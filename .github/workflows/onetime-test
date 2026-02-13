@@ -1,0 +1,139 @@
+name: build-kmod-coreos-43.20260105.3.0-intel-ipu6
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  packages: write
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install podman + jq
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y podman jq curl
+
+      - name: Detect kernel for coreos 43.20260105.3.0 (ublue-style)
+        id: kver
+        run: |
+          set -euo pipefail
+
+          # Read kernel NVR from the specific Fedora CoreOS container image
+          COREOS_KERNEL="$(podman run --rm quay.io/fedora/fedora-coreos:43.20260105.3.0 rpm -q kernel | sed 's/^kernel-//')"
+          echo "coreos_kernel=$COREOS_KERNEL" >> "$GITHUB_OUTPUT"
+
+          # Map it to a Koji-downloadable Fedora kernel NVR (with the common -100 fallback)
+          ARCH="${COREOS_KERNEL##*.}"
+          KMPP="${COREOS_KERNEL%%-*}"                 # major.minor.patch
+          RELARCH="${COREOS_KERNEL#*-}"               # e.g. 300.fc43.x86_64
+          REL="${RELARCH%.$ARCH}"                     # e.g. 300.fc43
+
+          try_url () {
+            curl -fsI "https://kojipkgs.fedoraproject.org/packages/kernel/${KMPP}/${1}/${ARCH}/kernel-devel-${KMPP}-${1}.${ARCH}.rpm" >/dev/null
+          }
+
+          if try_url "$REL"; then
+            FEDORA_KERNEL="${KMPP}-${REL}.${ARCH}"
+          else
+            NUM="${REL%%.*}"                          # 300
+            REST="${REL#*.}"                          # fc43
+            NUM2=$(printf "%03d" "$((10#$NUM - 100))") # 300 -> 200
+            REL2="${NUM2}.${REST}"
+            FEDORA_KERNEL="${KMPP}-${REL2}.${ARCH}"
+          fi
+
+          echo "fedora_kernel=$FEDORA_KERNEL" >> "$GITHUB_OUTPUT"
+
+      - name: Log in to GHCR
+        run: |
+          echo "${{ secrets.GITHUB_TOKEN }}" | \
+            podman login ghcr.io -u ${{ github.actor }} --password-stdin
+
+      - name: Build kmod RPM in Fedora container + sign modules
+        env:
+          FEDORA_KERNEL: ${{ steps.kver.outputs.fedora_kernel }}
+          KMOD_PRIVKEY_B64: ${{ secrets.KMOD_PRIVKEY_B64 }}
+          KMOD_PUBDER_B64: ${{ secrets.KMOD_PUBDER_B64 }}
+        run: |
+          set -euo pipefail
+          mkdir -p dist
+
+          podman run --rm \
+            -e KMOD_PRIVKEY_B64="$KMOD_PRIVKEY_B64" \
+            -e KMOD_PUBDER_B64="$KMOD_PUBDER_B64" \
+            -v "$PWD:/src:Z" -w /src quay.io/fedora/fedora:43 bash -lc '
+            set -euo pipefail
+            dnf -y install \
+              gcc make rpm-build redhat-rpm-config \
+              akmods kmodtool \
+              openssl curl xz findutils \
+              elfutils-libelf-devel
+
+            # Enable RPM Fusion repos (needed for akmod-intel-ipu6)
+            dnf -y install \
+              "https://download1.rpmfusion.org/free/fedora/rpmfusion-free-release-$(rpm -E %fedora).noarch.rpm" \
+              "https://download1.rpmfusion.org/nonfree/fedora/rpmfusion-nonfree-release-$(rpm -E %fedora).noarch.rpm"
+
+            # Install kernel-devel for the *exact* target kernel (from Koji)
+            KVER="'"$FEDORA_KERNEL"'"
+            ARCH="${KVER##*.}"
+            KMPP="${KVER%%-*}"
+            RELARCH="${KVER#*-}"
+            REL="${RELARCH%.$ARCH}"
+            BASE="https://kojipkgs.fedoraproject.org/packages/kernel/${KMPP}/${REL}/${ARCH}"
+
+            curl -fLO "$BASE/kernel-core-${KVER}.rpm"
+            curl -fLO "$BASE/kernel-modules-core-${KVER}.rpm"
+            curl -fLO "$BASE/kernel-devel-${KVER}.rpm"
+            dnf -y install \
+              ./kernel-core-"${KVER}".rpm \
+              ./kernel-modules-core-"${KVER}".rpm \
+              ./kernel-devel-"${KVER}".rpm
+
+            # Put signing keys where akmods expects them (so .ko files get signed)
+            install -d /etc/pki/akmods/private /etc/pki/akmods/certs
+            echo "$KMOD_PRIVKEY_B64" | base64 -d > /etc/pki/akmods/private/private_key.priv
+            echo "$KMOD_PUBDER_B64"  | base64 -d > /etc/pki/akmods/certs/public_key.der
+            chmod 644 /etc/pki/akmods/private/private_key.priv
+            chmod 644 /etc/pki/akmods/certs/public_key.der
+
+            # Install the akmod package from RPM Fusion
+            dnf -y install akmod-intel-ipu6
+
+            # Build kernel-version-specific kmod RPM for that kernel
+            akmods --force --kernels "${KVER}"
+
+            # Collect resulting RPM(s)
+            find /var/cache/akmods -maxdepth 5 -name "*intel-ipu6*.rpm" -print -exec cp -v {} /src/dist/ \;
+
+            # Also ship the public key so machines can enroll it (MOK) if needed
+            cp -v /etc/pki/akmods/certs/public_key.der /src/dist/
+          '
+
+      - name: Push kmod cache image to ghcr.io
+        env:
+          FEDORA_KERNEL: ${{ steps.kver.outputs.fedora_kernel }}
+        run: |
+          set -euo pipefail
+
+          cat > Containerfile.kmods <<'EOF'
+          FROM scratch
+          COPY dist/*.rpm /rpms/
+          COPY dist/public_key.der /certs/
+          EOF
+
+          IMAGE="ghcr.io/${{ github.repository_owner }}/akmod-intel-ipu6"
+
+          podman build -t "${IMAGE}:${FEDORA_KERNEL}" -f Containerfile.kmods .
+
+          echo "${{ secrets.GITHUB_TOKEN }}" | podman login ghcr.io -u ${{ github.actor }} --password-stdin
+
+          podman push "${IMAGE}:${FEDORA_KERNEL}"
+          podman tag  "${IMAGE}:${FEDORA_KERNEL}" "${IMAGE}:latest"
+          podman push "${IMAGE}:latest"
