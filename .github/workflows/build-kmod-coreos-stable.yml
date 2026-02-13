@@ -82,6 +82,7 @@ jobs:
             BASE="https://kojipkgs.fedoraproject.org/packages/kernel/${KMPP}/${REL}/${ARCH}"
 
             curl -fLO "$BASE/kernel-core-${KVER}.rpm"
+            curl -fLO "$BASE/kernel-modules-core-${KVER}.rpm"
             curl -fLO "$BASE/kernel-devel-${KVER}.rpm"
             dnf -y install ./kernel-core-"${KVER}".rpm ./kernel-devel-"${KVER}".rpm
 
