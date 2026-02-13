@@ -152,5 +152,5 @@ jobs:
           echo "${{ secrets.GITHUB_TOKEN }}" | podman login ghcr.io -u ${{ github.actor }} --password-stdin
 
           podman push "${IMAGE}:${FEDORA_KERNEL}"
-          podman tag  "${IMAGE}:${FEDORA_KERNEL}" "${IMAGE}:coreos-stable"
-          podman push "${IMAGE}:coreos-stable"
+          podman tag  "${IMAGE}:${FEDORA_KERNEL}" "${IMAGE}:latest"
+          podman push "${IMAGE}:latest"
