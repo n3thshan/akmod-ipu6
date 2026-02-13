@@ -96,7 +96,8 @@ jobs:
             install -d /etc/pki/akmods/private /etc/pki/akmods/certs
             echo "$KMOD_PRIVKEY_B64" | base64 -d > /etc/pki/akmods/private/private_key.priv
             echo "$KMOD_PUBDER_B64"  | base64 -d > /etc/pki/akmods/certs/public_key.der
-            chmod 600 /etc/pki/akmods/private/private_key.priv
+            chmod 644 /etc/pki/akmods/private/private_key.priv
+            chmod 644 /etc/pki/akmods/certs/public_key.der
 
             # Install the akmod package from RPM Fusion
             dnf -y install akmod-intel-ipu6
