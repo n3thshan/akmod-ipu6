@@ -62,7 +62,7 @@ jobs:
         env:
           FEDORA_KERNEL: ${{ steps.kver.outputs.fedora_kernel }}
         run: |
-          IMAGE="ghcr.io/${{ github.repository_owner }}/kmods-intel-ipu6:${FEDORA_KERNEL}"
+          IMAGE="ghcr.io/${{ github.repository_owner }}/akmod-intel-ipu6:${FEDORA_KERNEL}"
           if skopeo inspect "docker://${IMAGE}" &>/dev/null; then
             echo "skip=true" >> "$GITHUB_OUTPUT"
             echo "Image $IMAGE already exists — skipping build."
@@ -145,12 +145,12 @@ jobs:
           COPY dist/public_key.der /certs/
           EOF
 
-          IMAGE="ghcr.io/${{ github.repository_owner }}/kmods-intel-ipu6"
+          IMAGE="ghcr.io/${{ github.repository_owner }}/akmod-intel-ipu6"
 
           podman build -t "${IMAGE}:${FEDORA_KERNEL}" -f Containerfile.kmods .
 
           echo "${{ secrets.GITHUB_TOKEN }}" | podman login ghcr.io -u ${{ github.actor }} --password-stdin
 
           podman push "${IMAGE}:${FEDORA_KERNEL}"
-          podman tag  "${IMAGE}:${FEDORA_KERNEL}" "${IMAGE}:coreos-stable"
-          podman push "${IMAGE}:coreos-stable"
+          podman tag  "${IMAGE}:${FEDORA_KERNEL}" "${IMAGE}:latest"
+          podman push "${IMAGE}:latest"
