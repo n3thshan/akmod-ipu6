@@ -1,4 +1,4 @@
-name: build-kmod-coreos-stable-intel-ipu6
+name: main
 
 on:
   workflow_dispatch:
