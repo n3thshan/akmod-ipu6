@@ -6,7 +6,8 @@ on:
     - cron: "15 3 * * *" # daily
 
 permissions:
-  contents: write
+  contents: read
+  packages: write
 
 jobs:
   build:
@@ -54,20 +55,19 @@ jobs:
       - name: Check if build is needed
         id: check
         env:
-          GH_TOKEN: ${{ github.token }}
           FEDORA_KERNEL: ${{ steps.kver.outputs.fedora_kernel }}
         run: |
-          TAG="coreos-stable-${FEDORA_KERNEL}"
-          if gh release view "$TAG" &>/dev/null; then
+          IMAGE="ghcr.io/${{ github.repository_owner }}/kmods-intel-ipu6:${FEDORA_KERNEL}"
+          if podman manifest inspect "$IMAGE" &>/dev/null; then
             echo "skip=true" >> "$GITHUB_OUTPUT"
-            echo "Release $TAG already exists — skipping build."
+            echo "Image $IMAGE already exists — skipping build."
           else
             echo "skip=false" >> "$GITHUB_OUTPUT"
           fi
 
       - name: Build kmod RPM in Fedora container + sign modules
-        if: steps.check.outputs.skip != 'true'
         env:
+          if: steps.check.outputs.skip != 'true'
           FEDORA_KERNEL: ${{ steps.kver.outputs.fedora_kernel }}
           KMOD_PRIVKEY_B64: ${{ secrets.KMOD_PRIVKEY_B64 }}
           KMOD_PUBDER_B64: ${{ secrets.KMOD_PUBDER_B64 }}
@@ -127,13 +127,25 @@ jobs:
             cp -v /etc/pki/akmods/certs/public_key.der /src/dist/
           '
 
-      - name: Publish to GitHub Releases (tagged by kernel version)
+      - name: Push kmod cache image to ghcr.io
         if: steps.check.outputs.skip != 'true'
         env:
-          GH_TOKEN: ${{ github.token }}
           FEDORA_KERNEL: ${{ steps.kver.outputs.fedora_kernel }}
         run: |
           set -euo pipefail
-          TAG="coreos-stable-${FEDORA_KERNEL}"
-          gh release create "$TAG" --title "$TAG" --notes "Automated intel-ipu6 kmod build for ${FEDORA_KERNEL}" --latest=false || true
-          gh release upload "$TAG" dist/* --clobber
+
+          cat > Containerfile.kmods <<'EOF'
+          FROM scratch
+          COPY dist/*.rpm /rpms/
+          COPY dist/public_key.der /certs/
+          EOF
+
+          IMAGE="ghcr.io/${{ github.repository_owner }}/kmods-intel-ipu6"
+
+          podman build -t "${IMAGE}:${FEDORA_KERNEL}" -f Containerfile.kmods .
+
+          echo "${{ secrets.GITHUB_TOKEN }}" | podman login ghcr.io -u ${{ github.actor }} --password-stdin
+
+          podman push "${IMAGE}:${FEDORA_KERNEL}"
+          podman tag  "${IMAGE}:${FEDORA_KERNEL}" "${IMAGE}:coreos-stable"
+          podman push "${IMAGE}:coreos-stable"
