@@ -51,7 +51,22 @@ jobs:
 
           echo "fedora_kernel=$FEDORA_KERNEL" >> "$GITHUB_OUTPUT"
 
+      - name: Check if build is needed
+        id: check
+        env:
+          GH_TOKEN: ${{ github.token }}
+          FEDORA_KERNEL: ${{ steps.kver.outputs.fedora_kernel }}
+        run: |
+          TAG="coreos-stable-${FEDORA_KERNEL}"
+          if gh release view "$TAG" &>/dev/null; then
+            echo "skip=true" >> "$GITHUB_OUTPUT"
+            echo "Release $TAG already exists — skipping build."
+          else
+            echo "skip=false" >> "$GITHUB_OUTPUT"
+          fi
+
       - name: Build kmod RPM in Fedora container + sign modules
+        if: steps.check.outputs.skip != 'true'
         env:
           FEDORA_KERNEL: ${{ steps.kver.outputs.fedora_kernel }}
           KMOD_PRIVKEY_B64: ${{ secrets.KMOD_PRIVKEY_B64 }}
@@ -105,9 +120,6 @@ jobs:
             # Build kernel-version-specific kmod RPM for that kernel
             akmods --force --kernels "${KVER}"
 
-            # Show build logs regardless of success/failure
-            cat /var/cache/akmods/intel-ipu6/*.log 2>/dev/null || true
-            
             # Collect resulting RPM(s)
             find /var/cache/akmods -maxdepth 5 -name "*.rpm" -print -exec cp -v {} /src/dist/ \;
 
@@ -116,6 +128,7 @@ jobs:
           '
 
       - name: Publish to GitHub Releases (tagged by kernel version)
+        if: steps.check.outputs.skip != 'true'
         env:
           GH_TOKEN: ${{ github.token }}
           FEDORA_KERNEL: ${{ steps.kver.outputs.fedora_kernel }}
