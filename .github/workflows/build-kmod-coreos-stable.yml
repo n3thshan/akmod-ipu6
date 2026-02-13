@@ -60,7 +60,10 @@ jobs:
           set -euo pipefail
           mkdir -p dist
 
-          podman run --rm -v "$PWD:/src:Z" -w /src quay.io/fedora/fedora:43 bash -lc '
+          podman run --rm \
+            -e KMOD_PRIVKEY_B64="$KMOD_PRIVKEY_B64" \
+            -e KMOD_PUBDER_B64="$KMOD_PUBDER_B64" \
+            -v "$PWD:/src:Z" -w /src quay.io/fedora/fedora:43 bash -lc '
             set -euo pipefail
             dnf -y install \
               gcc make rpm-build redhat-rpm-config \
