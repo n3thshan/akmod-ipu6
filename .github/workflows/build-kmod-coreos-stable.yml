@@ -52,13 +52,18 @@ jobs:
 
           echo "fedora_kernel=$FEDORA_KERNEL" >> "$GITHUB_OUTPUT"
 
+      - name: Log in to GHCR
+        run: |
+          echo "${{ secrets.GITHUB_TOKEN }}" | \
+            podman login ghcr.io -u ${{ github.actor }} --password-stdin
+
       - name: Check if build is needed
         id: check
         env:
           FEDORA_KERNEL: ${{ steps.kver.outputs.fedora_kernel }}
         run: |
           IMAGE="ghcr.io/${{ github.repository_owner }}/kmods-intel-ipu6:${FEDORA_KERNEL}"
-          if podman manifest inspect "$IMAGE" &>/dev/null; then
+          if skopeo inspect "docker://${IMAGE}" &>/dev/null; then
             echo "skip=true" >> "$GITHUB_OUTPUT"
             echo "Image $IMAGE already exists — skipping build."
           else
